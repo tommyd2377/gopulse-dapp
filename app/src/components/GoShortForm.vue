@@ -1,92 +1,71 @@
 <script setup>
-import { ref, toRefs } from 'vue'
-import { useAutoresizeTextarea } from '@/composables'
+import { computed, ref, toRefs } from 'vue'
 import { validateContent } from '@/api'
 import { useWallet } from 'solana-wallets-vue'
 
-// Props.
 const props = defineProps({
     postContent: Object,
 })
 const { postContent } = toRefs(props)
 
-// Form data.
-const amount = ref()
-
-// Auto-resize the content's textarea.
-const textarea = ref()
-useAutoresizeTextarea(textarea)
-
-// Permissions.
+const amount = ref('')
 const { connected } = useWallet()
-// const canPostContent = computed(() => content.value && characterLimit.value > 0)
+const canValidate = computed(() => Number(amount.value) > 0)
 
-// Actions.
 const emit = defineEmits(['close'])
 const validate = async () => {
-    // if (! canPostContent.value) return
-    await validateContent(postContent.value, amount.value, "short")
+    if (!canValidate.value) return
+    await validateContent(postContent.value, amount.value, 'short')
     emit('close')
 }
 </script>
 
 <template>
-    <div v-if="connected">
-        <div class="px-8 py-4 border-l-4 border-blue-800">
-            <div class="py-1">
-                <h3 class="inline font-semibold" :title="postContent.author">
-                    <router-link :to="{ name: 'Account' }" class="hover:underline">
-                        {{ postContent.author_display }}
-                    </router-link>
-                </h3>
-                <span class="text-gray-500"> • </span>
-                <time class="text-gray-500 text-sm" :title="postContent.created_at">
-                    <router-link :to="{ name: 'PostContent', params: { postContent: postContent.publicKey.toBase58() } }" class="hover:underline">
-                        {{ postContent.created_ago }}
-                    </router-link>
-                </time>
-            </div>
-            
-            <!-- Content field. -->
-            <div class="flex flex-wrap items-center justify-between -m-2">
-            <router-link v-if="postContent.market" :to="{ name: 'Markets', params: { market: postContent.market } }" class="inline-block mt-2 text-blue-500 hover:underline break-all">
-                #{{ postContent.market }}
-            </router-link>
-            <div style="-ms-word-break: break-all; word-break: break-all; word-break: break-word;
-                        -webkit-hyphens: auto; -moz-hyphens: auto; -ms-hyphens: auto; hyphens: auto;" class="m-2 mr-4">
-                <p class="text-blue-800 rounded pl-4 pr-4 py-2 bg-gray-500" v-text="postContent.content">
+    <div v-if="connected" class="gp-card border-blue-400">
+        <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+                <div class="gp-pill mb-3 text-blue-100">Go Short</div>
+                <h2 class="text-xl font-semibold text-white">Challenge this content outcome.</h2>
+                <p class="mt-2 gp-muted">
+                    Short validators stake against the creator-side pool. If short wins when the market closes, eligible short participants can collect.
                 </p>
             </div>
-                <div class="relative m-2 mr-4">
-                    <input
-                        type="number"
-                        placeholder="SOL"
-                        class="text-blue-800 rounded-full pl-3 pr-4 py-2 bg-gray-500"
-                        @input="amount = $event.target.value"
-                    >
-                </div>
-                <div class="flex items-center space-x-4 m-2 ml-auto">
+            <router-link
+                :to="{ name: 'PostContent', params: { postContent: postContent.publicKey.toBase58() } }"
+                class="gp-pill normal-case tracking-normal"
+            >
+                {{ postContent.author_display }} • {{ postContent.created_ago }}
+            </router-link>
+        </div>
 
-                    <!-- Close button. -->
-                    <button
-                        class="text-gray-500 px-4 py-2 rounded-full border bg-white hover:bg-gray-50"
-                        @click="emit('close')"
-                    >
-                        Cancel
-                    </button>
+        <div class="mt-5 rounded-lg border border-slate-800 bg-slate-950 p-4 text-slate-100 break-words">
+            {{ postContent.content }}
+        </div>
 
-                    <!-- PostContent button. -->
-                    <button
-                        class="text-white px-4 py-2 rounded-full bg-blue-800 font-semibold"                   @click="validate"
-                    >
-                        Go Short
-                    </button>
-                </div>
+        <div class="mt-5 grid gap-4 md:grid-cols-3 md:items-end">
+            <label class="grid gap-2 md:col-span-2">
+                <span class="text-sm font-semibold text-slate-200">Stake amount in SOL</span>
+                <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.1"
+                    class="gp-input"
+                    v-model="amount"
+                >
+            </label>
+            <div class="flex flex-wrap gap-2">
+                <button class="gp-button-secondary" @click="emit('close')">
+                    Cancel
+                </button>
+                <button class="gp-button-primary" :disabled="!canValidate" @click="validate">
+                    Confirm Short
+                </button>
             </div>
         </div>
     </div>
 
-    <div v-else class="px-8 py-4 bg-gray-50 text-gray-500 text-center border-b">
-        Connect your wallet to start posting...
+    <div v-else class="gp-card text-center">
+        <h2 class="text-lg font-semibold text-white">Connect your wallet to go short.</h2>
     </div>
 </template>

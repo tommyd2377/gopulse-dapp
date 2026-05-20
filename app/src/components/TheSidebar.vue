@@ -1,63 +1,90 @@
 <script setup>
+import { computed } from 'vue'
 import { WalletMultiButton, useWallet } from 'solana-wallets-vue'
-const { connected } = useWallet()
+
+const { connected, publicKey } = useWallet()
+
+const navItems = [
+    { name: 'Feed', label: 'Feed', helper: 'Live markets' },
+    { name: 'Markets', label: 'Markets', helper: 'Topic discovery' },
+    { name: 'Accounts', label: 'Accounts', helper: 'Creators' },
+    { name: 'Validated', label: 'Validated', helper: 'Closed markets', requiresWallet: true },
+    { name: 'Account', label: 'Profile', helper: 'Your account', requiresWallet: true },
+]
+
+const visibleNavItems = computed(() => navItems.filter(item => !item.requiresWallet || connected.value))
+
+const shortAddress = (key) => {
+    if (!key) return ''
+    const address = key.toBase58()
+    return `${address.slice(0, 4)}...${address.slice(-4)}`
+}
 </script>
 
 <template>
-    <aside class="flex flex-col items-center md:items-stretch space-y-2 md:space-y-4">
-        <router-link :to="{ name: 'Feed' }" class="inline-block rounded-full hover:bg-gray-700 p-3 md:self-start">
-            <img src="../../public/gp.png" alt="alternatetext" style="width: 50px; height: 50px;">
-        </router-link>
-        <div class="flex flex-col items-center md:items-stretch space-y-2">
-            <router-link :to="{ name: 'Feed' }" class="rounded-full hover:bg-blue-800 p-3 md:w-full inline-flex items-center space-x-4" active-class="font-bold" v-slot="{ isActive }">
-                <svg v-if="isActive" xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-                </svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                </svg>
-                <div class="text-gray-500 text-xl hidden md:block">Feed</div>
+    <aside class="gp-card flex h-full flex-col justify-between p-4">
+        <div>
+            <router-link :to="{ name: 'Feed' }" class="mb-6 flex items-center gap-3">
+                <span class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-purple-500 bg-black shadow-lg">
+                    <img src="/gp.png" alt="GoPulse logo" class="h-full w-full object-cover">
+                </span>
+                <span class="min-w-0">
+                    <span class="block text-lg font-semibold text-white">GoPulse</span>
+                    <span class="block text-xs gp-muted">Validation markets</span>
+                </span>
             </router-link>
-            <router-link :to="{ name: 'Markets' }" class="rounded-full hover:bg-blue-800 p-3 md:w-full inline-flex items-center space-x-4" active-class="font-bold" v-slot="{ isActive }">
-                <svg v-if="isActive" xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
-                    <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
-                </svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
-                </svg>
-                <div class="text-gray-500 text-xl hidden md:block">Markets</div>
-            </router-link>
-            <router-link :to="{ name: 'Accounts' }" class="rounded-full hover:bg-blue-800 p-3 md:w-full inline-flex items-center space-x-4" active-class="font-bold" v-slot="{ isActive }">
-                <svg v-if="isActive" xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
-                </svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-                <div class="text-gray-500 text-xl hidden md:block">Accounts</div>
-            </router-link>
-            <router-link v-if="connected" :to="{ name: 'Validated' }" class="rounded-full hover:bg-blue-800 p-3 md:w-full inline-flex items-center space-x-4" active-class="font-bold" v-slot="{ isActive }">
-                <svg v-if="isActive" xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.629,14.566c0.125,0.125,0.291,0.188,0.456,0.188c0.164,0,0.329-0.062,0.456-0.188l8.219-8.221c0.252-0.252,0.252-0.659,0-0.911c-0.252-0.252-0.659-0.252-0.911,0l-7.764,7.763L4.152,9.267c-0.252-0.251-0.66-0.251-0.911,0c-0.252,0.252-0.252,0.66,0,0.911L7.629,14.566z" />
-                </svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M7.629,14.566c0.125,0.125,0.291,0.188,0.456,0.188c0.164,0,0.329-0.062,0.456-0.188l8.219-8.221c0.252-0.252,0.252-0.659,0-0.911c-0.252-0.252-0.659-0.252-0.911,0l-7.764,7.763L4.152,9.267c-0.252-0.251-0.66-0.251-0.911,0c-0.252,0.252-0.252,0.66,0,0.911L7.629,14.566z" clip-rule="evenodd" />
-                </svg>
-                
-                <div class="text-gray-500 text-xl hidden md:block">Validated</div>
-            </router-link>
-            <router-link v-if="connected" :to="{ name: 'Account' }" class="rounded-full hover:bg-blue-800 p-3 md:w-full inline-flex items-center space-x-4" active-class="font-bold" v-slot="{ isActive }">
-                <svg v-if="isActive" xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
-                </svg>
-                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <div class="text-gray-500 text-xl hidden md:block">Account</div>
-            </router-link>
+
+            <nav class="grid gap-2">
+                <router-link
+                    v-for="item in visibleNavItems"
+                    :key="item.name"
+                    :to="{ name: item.name }"
+                    custom
+                    v-slot="{ href, navigate, isActive }"
+                >
+                    <a
+                        :href="href"
+                        class="group flex items-center gap-3 rounded-md border px-3 py-3 transition"
+                        :class="isActive ? 'border-green-400 text-white shadow-lg' : 'border-transparent text-slate-300 hover:border-slate-700 hover:bg-slate-900'"
+                        :style="isActive ? 'background: linear-gradient(90deg, rgba(153,69,255,0.2), rgba(20,241,149,0.12)); box-shadow: 0 0 28px rgba(20,241,149,0.12);' : ''"
+                        @click="navigate"
+                    >
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-950 text-slate-300 group-hover:text-white">
+                            <svg v-if="item.name === 'Feed'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16M4 12h16M4 19h10" />
+                            </svg>
+                            <svg v-else-if="item.name === 'Markets'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 18V6m5 12V9m5 9V4m5 14v-7" />
+                            </svg>
+                            <svg v-else-if="item.name === 'Accounts'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16 11a4 4 0 10-8 0m8 0a4 4 0 11-8 0m8 0c2.21.57 4 2.15 4 4.5V18H4v-2.5c0-2.35 1.79-3.93 4-4.5" />
+                            </svg>
+                            <svg v-else-if="item.name === 'Validated'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M20 6L9 17l-5-5" />
+                            </svg>
+                            <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0" />
+                            </svg>
+                        </span>
+                        <span class="min-w-0">
+                            <span class="block text-sm font-semibold">{{ item.label }}</span>
+                            <span class="block text-xs gp-muted">{{ item.helper }}</span>
+                        </span>
+                    </a>
+                </router-link>
+            </nav>
         </div>
-        <div class="fixed bottom-8 right-8 md:static w-48 md:w-full">
+
+        <div class="mt-6 grid gap-3">
+            <div class="gp-panel p-3">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-xs font-semibold uppercase tracking-wide gp-muted">Network</span>
+                    <span class="gp-pill">Devnet</span>
+                </div>
+                <p class="mt-2 text-xs gp-muted">
+                    {{ connected ? shortAddress(publicKey) : 'Connect to participate.' }}
+                </p>
+            </div>
             <wallet-multi-button></wallet-multi-button>
         </div>
     </aside>

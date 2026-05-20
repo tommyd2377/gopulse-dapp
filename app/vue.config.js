@@ -12,7 +12,8 @@ module.exports = defineConfig({
     configureWebpack: {
         plugins: [
             new webpack.ProvidePlugin({
-                Buffer: ['buffer', 'Buffer']
+                Buffer: ['buffer', 'Buffer'],
+                process: 'process/browser'
             })
         ], 
         resolve: {
@@ -20,9 +21,10 @@ module.exports = defineConfig({
                 crypto: require.resolve("crypto-browserify"),
                 fs: false,
                 assert: false,
-                process: false,
+                process: require.resolve("process/browser"),
                 util: false,
                 path: false,
+                vm: false,
                 stream: require.resolve("stream-browserify"),
             }
         }

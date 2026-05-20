@@ -1,112 +1,107 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { useAutoresizeTextarea } from '@/composables'
 import { createUser, updateUser, fetchUser } from '@/api'
-import { useWallet } from 'solana-wallets-vue'
-import { useAnchorWallet } from 'solana-wallets-vue'
+import { useWallet, useAnchorWallet } from 'solana-wallets-vue'
 
 const wallet = useAnchorWallet()
 
-// Form data.
 const name = ref('')
 const avatar = ref('')
 const username = ref('')
 const useravatar = ref('')
-const profileExists = ref()
+const profileExists = ref(false)
+const loadingProfile = ref(true)
 
-// Auto-resize the content's textarea.
-const textarea = ref()
-useAutoresizeTextarea(textarea)
-
-// Character limit / count-down.
-// const characterLimit = useCountCharacterLimit(content, 420)
-// const characterLimitColour = computed(() => {
-//     if (characterLimit.value < 0) return 'text-red-500'
-//     if (characterLimit.value <= 10) return 'text-yellow-500'
-//     return 'text-gray-400'
-// })
-
-// Permissions.
 const { connected } = useWallet()
-const canPostContent = computed(() => name.value && avatar.value)
+const canSaveAccount = computed(() => Boolean(name.value && avatar.value))
 
-fetchUser(wallet.value.publicKey).then(res => {
-    profileExists.value = true
-    username.value = res.name
-    useravatar.value = res.avatar
-}).catch(() => {
-    profileExists.value = false
-})
+if (wallet.value) {
+    fetchUser(wallet.value.publicKey).then(res => {
+        profileExists.value = true
+        username.value = res.name
+        useravatar.value = res.avatar
+        name.value = res.name
+        avatar.value = res.avatar
+    }).catch(() => {
+        profileExists.value = false
+    }).finally(() => {
+        loadingProfile.value = false
+    })
+} else {
+    loadingProfile.value = false
+}
 
-// Actions.
 const setAccount = async () => {
-    console.log(name.value, avatar.value)
+    if (!canSaveAccount.value) return
     await createUser(name.value, avatar.value)
-    name.value = ''
-    avatar.value = ''
+    username.value = name.value
+    useravatar.value = avatar.value
+    profileExists.value = true
 }
 
 const updateAccount = async () => {
-    console.log(name.value, avatar.value)
+    if (!canSaveAccount.value) return
     await updateUser(name.value, avatar.value)
-    name.value = ''
-    avatar.value = ''
+    username.value = name.value
+    useravatar.value = avatar.value
 }
-
 </script>
 
 <template>
-    <div v-if="connected" class="px-8 py-4 border-b">
+    <div v-if="connected" class="gp-card">
+        <div class="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+                <div class="gp-pill mb-3">Account profile</div>
+                <h2 class="text-xl font-semibold text-white">{{ profileExists ? 'Update your GoPulse identity' : 'Create your GoPulse identity' }}</h2>
+                <p class="mt-2 gp-muted">
+                    Profiles help markets show readable creator names and avatars instead of raw wallet addresses.
+                </p>
+            </div>
+            <div v-if="useravatar || username" class="flex items-center gap-3">
+                <img v-if="useravatar" :src="useravatar" alt="Profile avatar preview" class="h-12 w-12 rounded-lg border border-slate-700 object-cover">
+                <div>
+                    <div class="font-semibold text-white">{{ username || 'Unnamed profile' }}</div>
+                    <div class="text-xs gp-muted">{{ profileExists ? 'Existing profile' : 'New profile' }}</div>
+                </div>
+            </div>
+        </div>
 
-        <div class="flex flex-wrap items-center justify-between -m-2">
+        <div v-if="loadingProfile" class="gp-panel text-sm gp-muted">
+            Loading profile...
+        </div>
 
-            <!-- Topic field. -->
-            <div class="relative m-2 mr-4">
+        <div v-else class="grid gap-4 md:grid-cols-3 md:items-end">
+            <label class="grid gap-2">
+                <span class="text-sm font-semibold text-slate-200">Username</span>
                 <input
                     type="text"
-                    placeholder="Username"
-                    class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                    :value="name"
-                    @input="name = $event.target.value"
+                    placeholder="Creator name"
+                    class="gp-input"
+                    v-model="name"
                 >
-               
-            </div>
+            </label>
 
-            <div class="relative m-2 mr-4">
+            <label class="grid gap-2">
+                <span class="text-sm font-semibold text-slate-200">Avatar URL</span>
                 <input
-                    type="text"
-                    placeholder="Avatar"
-                    class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                    :value="avatar"
-                    @input="avatar = $event.target.value"
+                    type="url"
+                    placeholder="https://..."
+                    class="gp-input"
+                    v-model="avatar"
                 >
-               
-            </div>
-            
-            <div class="flex items-center space-x-6 m-2 ml-auto">
+            </label>
 
-                <button v-if="!profileExists"
-                    class="text-white px-4 py-2 rounded-full font-semibold" :disabled="! canPostContent"
-                    :class="canPostContent ? 'bg-blue-800' : 'bg-blue-800 cursor-not-allowed'"
-                    @click="setAccount"
-                >
-                    Set Account
-                </button>
-                
-
-                <!-- PostContent button. -->
-                <button v-if="profileExists"
-                    class="text-white px-4 py-2 rounded-full font-semibold" :disabled="! canPostContent"
-                    :class="canPostContent ? 'bg-blue-800' : 'bg-blue-800 cursor-not-allowed'"
-                    @click="updateAccount"
-                >
-                    Update Account
-                </button>
-            </div>
+            <button
+                class="gp-button-primary"
+                :disabled="!canSaveAccount"
+                @click="profileExists ? updateAccount() : setAccount()"
+            >
+                {{ profileExists ? 'Update profile' : 'Create profile' }}
+            </button>
         </div>
     </div>
 
-    <div v-else class="px-8 py-4 bg-gray-50 text-gray-500 text-center border-b">
-        Connect your wallet to start posting...
+    <div v-else class="gp-card text-center">
+        <h2 class="text-lg font-semibold text-white">Connect your wallet to manage your profile.</h2>
     </div>
 </template>

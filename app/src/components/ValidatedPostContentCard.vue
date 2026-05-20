@@ -8,33 +8,33 @@ const props = defineProps({
     postContent: Object,
 })
 
-const counter = ref()
-const poster = ref()
-const useravatar = ref()
-const username = ref()
-
 const { postContent } = toRefs(props)
 const { wallet } = useWorkspace()
+const useravatar = ref('')
+const username = ref('')
+
 const isMyPostContent = computed(() => wallet.value && wallet.value.publicKey.toBase58() === postContent.value.poster.toBase58())
 const authorRoute = computed(() => {
     if (isMyPostContent.value) {
         return { name: 'Account' }
-    } else {
-        return { name: 'Accounts', params: { author: postContent.value.poster.toBase58() } }
     }
+    return { name: 'Accounts', params: { author: postContent.value.poster.toBase58() } }
 })
-
-counter.value = postContent.value.postCounter
-poster.value = postContent.value.poster
+const outcomeLabel = computed(() => postContent.value.shortWin ? 'Short won' : 'Long won')
+const formattedContent = computed(() => escapeHtml(postContent.value.content).replace(/\n/g, '<br>'))
+const stats = computed(() => [
+    { label: 'Poster stake', value: formatSol(postContent.value.amount) },
+    { label: 'Total pool', value: formatSol(postContent.value.totalPool) },
+    { label: 'Long pool', value: formatSol(postContent.value.longPool) },
+    { label: 'Short pool', value: formatSol(postContent.value.shortPool) },
+])
 
 const collectPoster = async () => {
-    console.log("collection running..." + counter.value)
-    await posterCollect(counter.value)
+    await posterCollect(postContent.value.postCounter)
 }
 
 const collectValidator = async () => {
-    console.log("collection running..." + counter.value)
-    await validatorCollect(poster.value, counter.value)
+    await validatorCollect(postContent.value.poster, postContent.value.postCounter)
 }
 
 onMounted(async () => {
@@ -48,82 +48,87 @@ onMounted(async () => {
     }
 })
 
+function formatSol(value) {
+    const numeric = Number(value || 0)
+    return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 4 })} SOL`
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, character => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;',
+    }[character]))
+}
 </script>
 
-<template>    
-    <div class="px-8 py-4" v-if="postContent.validatorThresholdReached">
-        <div class="flex justify-between">
-            <div class="py-1">
-                <router-link :to="authorRoute" class="hover:underline">
+<template>
+    <article v-if="postContent.validatorThresholdReached" class="gp-card">
+        <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <router-link :to="authorRoute" class="flex min-w-0 items-center gap-3">
+                <img
+                    v-if="useravatar"
+                    class="h-12 w-12 rounded-lg border border-slate-700 object-cover"
+                    :src="useravatar"
+                    alt="Creator avatar"
+                >
+                <span v-else class="flex h-12 w-12 items-center justify-center rounded-lg border border-slate-700 bg-slate-950 text-sm font-semibold text-green-300">
+                    GP
+                </span>
+                <span class="min-w-0">
+                    <span class="block truncate font-semibold text-white">{{ username || 'GoPulse creator' }}</span>
+                    <span class="block break-all text-xs gp-muted">{{ postContent.author_display }}</span>
+                </span>
+            </router-link>
 
-                <div class="flex items-center">
-                    <img style="border-radius: 50%; max-height: 50px; max-width: 50px; margin-right: 16px; object-fit: cover; aspect-ratio: 1/1;" :src="useravatar" alt="User Avatar">
-                    <h1 class="inline font-semibold text-lg" :title="username">
-                    
-                            {{ username }}
-                      
-                    </h1>
-                </div>
-                    <h3 class="inline font-semibold" :title="postContent.author">
-                            {{ postContent.author_display }}
-                        
-                    </h3>
-                </router-link>
-                <span class="text-gray-500"> • </span>
-                <time class="text-gray-500 text-sm" :title="postContent.created_at">
-                    <router-link :to="{ name: 'PostContent', params: { postContent: postContent.publicKey.toBase58() } }" class="hover:underline">
-                        {{ postContent.created_ago }}
-                    </router-link>
-                </time>
+            <div class="flex flex-wrap gap-2">
+                <span class="gp-pill text-blue-100">Closed</span>
+                <span class="gp-pill">{{ outcomeLabel }}</span>
             </div>
         </div>
-        <div class="flex flex-wrap items-center justify-between -m-2">
-            <router-link v-if="postContent.market" :to="{ name: 'Markets', params: { market: postContent.market } }" class="inline-block mt-2 text-blue-500 hover:underline break-all">
+
+        <div class="mt-5">
+            <router-link
+                v-if="postContent.market"
+                :to="{ name: 'Markets', params: { market: postContent.market } }"
+                class="gp-pill normal-case tracking-normal hover:border-green-300 hover:text-white"
+            >
                 #{{ postContent.market }}
             </router-link>
-            <div style="-ms-word-break: break-all; word-break: break-all; word-break: break-word;
-                        -webkit-hyphens: auto; -moz-hyphens: auto; -ms-hyphens: auto; hyphens: auto;" class="m-2 mr-4">
-                <p class="text-blue-800 rounded pl-4 pr-4 py-2 bg-gray-500" v-text="postContent.content">
-                </p>
-            </div>
-            
-            <div class="m-2 mr-4">
-                Poster Stake
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.amount"></p>
-            </div>
-            
-            <div class="m-2 mr-4">
-                Market Size
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.threshold"></p>
-            </div>
-            <!-- <div class="m-2 mr-4">
-                Long Pool
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.longPool"></p>
-            </div>
-            <div class="m-2 mr-4">
-                Short Pool
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.shortPool"></p>
-            </div> -->
-            <div class="m-2 mr-4">
-                Total Pool
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.totalPool"></p>
-            </div>
-            <!-- <div class="m-2 mr-4">
-                Validator Count
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.validatorCount"></p>
-            </div> -->
-            <div class="m-2 mr-4">
-                Market Open
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="!postContent.validatorThresholdReached"></p>
+            <div class="mt-4 break-words rounded-lg border border-slate-800 bg-slate-950 p-4 text-base leading-7 text-slate-100" v-html="formattedContent"></div>
+        </div>
+
+        <div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div v-for="item in stats" :key="item.label" class="gp-stat">
+                <div class="text-xs font-semibold uppercase tracking-wide gp-muted">{{ item.label }}</div>
+                <div class="mt-1 break-words text-sm font-semibold text-white">{{ item.value }}</div>
             </div>
         </div>
-        <div style="display: flex; justify-content: center;" class="flex">
-            <button v-if="postContent.validatorThresholdReached && isMyPostContent" @click="collectPoster" class="text-center flex px-2 rounded-full hover:bg-blue-800" title="Poster Collect">
-                <img src="https://static.thenounproject.com/png/3249399-200.png" style="max-width: 50px" alt="">
-            </button>
-            <button v-if="postContent.validatorThresholdReached && !isMyPostContent" @click="collectValidator" class="flex px-2 rounded-full hover:bg-blue-800" title="Validator Collect">
-                <img src="https://static.thenounproject.com/png/3249399-200.png" style="max-width: 50px" alt="">
-            </button>
+
+        <div class="mt-5 flex flex-col gap-3 border-t border-slate-800 pt-5 md:flex-row md:items-center md:justify-between">
+            <div class="text-sm gp-muted">
+                Closed {{ postContent.created_ago }}. Eligible participants can collect from the settled pool.
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button
+                    v-if="isMyPostContent"
+                    @click="collectPoster"
+                    class="gp-button-primary"
+                    title="Poster Collect"
+                >
+                    Collect creator rewards
+                </button>
+                <button
+                    v-else
+                    @click="collectValidator"
+                    class="gp-button-primary"
+                    title="Validator Collect"
+                >
+                    Collect validator rewards
+                </button>
+            </div>
         </div>
-    </div>    
+    </article>
 </template>

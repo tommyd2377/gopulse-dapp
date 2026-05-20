@@ -3,534 +3,246 @@ import { computed, ref, toRefs } from 'vue'
 import { useAutoresizeTextarea, useCountCharacterLimit, useSlug } from '@/composables'
 import { sendPostContent } from '@/api'
 import { useWallet } from 'solana-wallets-vue'
-import { WebBundlr } from "@bundlr-network/client";
+import { WebBundlr } from '@bundlr-network/client'
 
-// Props.
 const props = defineProps({
     forcedTopic: String,
 })
 const { forcedTopic } = toRefs(props)
 
-// Form data.
-const arweaveLink = ref(''); // Added ref for Arweave link
+const tabs = [
+    { id: 'micro', label: 'Micro', hint: 'Short text or a link.' },
+    { id: 'blog', label: 'Blog', hint: 'Upload or link a longer post.', accept: 'text/*,application/pdf,application/json,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+    { id: 'image', label: 'Image', hint: 'Upload image evidence.', accept: 'image/*' },
+    { id: 'audio', label: 'Audio', hint: 'Upload audio evidence.', accept: 'audio/*,.mp3,.wav,.ogg,.m4a,.webm' },
+    { id: 'video', label: 'Video', hint: 'Upload video evidence.', accept: 'video/*,.mp4,.webm,.mov' },
+]
+
+const walletContext = useWallet()
+const { connected } = walletContext
+
+const arweaveLink = ref('')
 const content = ref('')
 const market = ref('')
-const amount = ref()
-const activeTab = ref('form1');
-const threshold = ref()
+const amount = ref('')
+const activeTab = ref('micro')
+const threshold = ref('')
+const fileInput = ref(null)
+const uploadStatus = ref('')
+const uploadError = ref('')
+const isUploading = ref(false)
 const slugTopic = useSlug(market)
 const effectiveTopic = computed(() => forcedTopic.value ?? slugTopic.value)
+const activeMode = computed(() => tabs.find(tab => tab.id === activeTab.value) ?? tabs[0])
+const isUploadMode = computed(() => Boolean(activeMode.value.accept))
 
-// Auto-resize the content's textarea.
 const textarea = ref()
 useAutoresizeTextarea(textarea)
 
-// Character limit / count-down.
 const characterLimit = useCountCharacterLimit(content, 420)
 const characterLimitColour = computed(() => {
-    if (characterLimit.value < 0) return 'text-red-500'
-    if (characterLimit.value <= 10) return 'text-yellow-500'
-    return 'text-gray-400'
+    if (characterLimit.value < 0) return 'text-red-300'
+    if (characterLimit.value <= 10) return 'text-yellow-300'
+    return 'text-slate-400'
 })
 
-// Permissions.
-const { connected } = useWallet()
-const canPostContent = computed(() => content.value && characterLimit.value > 0)
+const canPostContent = computed(() => Boolean(content.value) && characterLimit.value >= 0 && !isUploading.value)
+const postHint = computed(() => {
+    if (isUploading.value) return 'Wait for the upload to finish before posting.'
+    if (!content.value) return 'Add content or an uploaded Arweave link to open a market.'
+    if (characterLimit.value < 0) return 'Content must be 420 characters or fewer.'
+    if (!amount.value || !threshold.value) return 'Stake amount and validator threshold are required by the protocol transaction.'
+    return 'Ready to create a validation market.'
+})
 
-// Actions.
 const emit = defineEmits(['added'])
 const send = async () => {
     if (! canPostContent.value) return
-    const postContent = await sendPostContent(content.value, market.value, amount.value, threshold.value)
+    const postContent = await sendPostContent(content.value, effectiveTopic.value, amount.value, threshold.value)
     emit('added', postContent)
     market.value = ''
     content.value = ''
     amount.value = ''
     threshold.value = ''
+    arweaveLink.value = ''
+    uploadStatus.value = ''
+    uploadError.value = ''
 }
 
 async function uploadViaBundlr(file, contentType) {
-    try {
+    const bundlr = new WebBundlr('https://devnet.bundlr.network', 'solana', walletContext.wallet.value, {
+        providerUrl: 'https://api.devnet.solana.com',
+    })
 
-        let wallet = useWallet();
+    await bundlr.ready()
+    const price = await bundlr.getPrice(file.size)
+    await bundlr.fund(price)
 
-        const bundlr = new WebBundlr("https://devnet.bundlr.network", "solana", wallet.wallet.value, {
-        providerUrl: "https://api.devnet.solana.com",
-        });
+    const fileContent = await readFileAsync(file)
+    const buffer = Buffer.from(fileContent)
+    const tags = [{ name: 'Content-Type', value: contentType }]
+    const response = await bundlr.upload(buffer, { tags })
 
-        await bundlr.ready();
-
-        const price = await bundlr.getPrice(file.size);
-
-        await bundlr.fund(price);
-
-        const fileContent = await readFileAsync(file);
-        const buffer = Buffer.from(fileContent);
-
-        const tags = [{ name: "Content-Type", value: contentType }];
-        const response = await bundlr.upload(buffer, { tags: tags });
-
-        arweaveLink.value = "https://arweave.net/" + response.id;
-
-        console.log(`Data Available at => https://arweave.net/${response.id}`);
-
-    } catch (error) {
-        console.error('Error uploading via Bundlr:', error);
-        // Handle error as needed
-    }
+    arweaveLink.value = `https://arweave.net/${response.id}`
+    console.log(`Data Available at => https://arweave.net/${response.id}`)
 }
 
 async function readFileAsync(file) {
     return new Promise((resolve, reject) => {
-        const reader = new FileReader();
+        const reader = new FileReader()
         reader.onload = (event) => {
-            resolve(event.target.result);
-        };
+            resolve(event.target.result)
+        }
         reader.onerror = (event) => {
-            reject(event.target.error);
-        };
-        reader.readAsArrayBuffer(file);
-    });
+            reject(event.target.error)
+        }
+        reader.readAsArrayBuffer(file)
+    })
+}
+
+const chooseFile = () => {
+    if (fileInput.value) fileInput.value.click()
 }
 
 const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (file) {
-        await uploadViaBundlr(file, file.type);
-        // Fill the content field with the Arweave link
-        content.value = arweaveLink.value;
+    const file = event.target.files[0]
+    if (!file) return
+
+    uploadError.value = ''
+    uploadStatus.value = `Uploading ${file.name} to Arweave through Bundlr...`
+    isUploading.value = true
+
+    try {
+        await uploadViaBundlr(file, file.type || 'application/octet-stream')
+        content.value = arweaveLink.value
+        uploadStatus.value = 'Arweave link inserted into the content field.'
+    } catch (error) {
+        console.error('Error uploading via Bundlr:', error)
+        uploadError.value = error instanceof Error ? error.message : 'Upload failed. Try again or paste a link manually.'
+        uploadStatus.value = ''
+    } finally {
+        isUploading.value = false
+        event.target.value = ''
     }
 }
 </script>
 
 <template>
-    <div v-if="connected" class="px-8 py-4 border-b">
-        <div>
-            <div class="tabs">
-
-                <button
-                    class="tab"
-                    :class="{ active: activeTab === 'form1' }"
-                    @click="activeTab = 'form1'"
-                >
-                    Micro
-                </button>
-                <button
-                    class="tab"
-                    :class="{ active: activeTab === 'form2' }"
-                    @click="activeTab = 'form2'"
-                >
-                    Blog
-                </button>
-                <button
-                    class="tab"
-                    :class="{ active: activeTab === 'form3' }"
-                    @click="activeTab = 'form3'"
-                >
-                    Image
-                </button>
-                <button
-                    class="tab"
-                    :class="{ active: activeTab === 'form4' }"
-                    @click="activeTab = 'form4'"
-                >
-                    Audio
-                </button>
-                <button
-                    class="tab"
-                    :class="{ active: activeTab === 'form5' }"
-                    @click="activeTab = 'form5'"
-                >
-                    Video
-                </button>
+    <div v-if="connected" class="gp-card">
+        <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+                <div class="gp-pill mb-3">Create validation market</div>
+                <h2 class="text-xl font-semibold text-white">Open a market around content credibility.</h2>
+                <p class="mt-2 gp-muted">
+                    Add content, define a market prompt, set the validator threshold, and stake SOL into the initial long pool.
+                </p>
             </div>
+            <div class="gp-pill">{{ activeMode.hint }}</div>
+        </div>
 
-    <div v-if="activeTab === 'form1'">
-        <br>
-        
-        <!-- Content field. -->
-        <textarea
-            ref="textarea"
-            rows="1"
-            class="text-xl rounded w-full focus:outline-none pl-5 py-5 resize-none mb-3 bg-gray-500"
-            placeholder="Say something smart or post a link..."
-            v-model="content"
-        ></textarea>
+        <div class="mb-5 flex flex-wrap gap-2 rounded-lg border border-slate-800 bg-slate-950 p-1">
+            <button
+                v-for="tab in tabs"
+                :key="tab.id"
+                type="button"
+                class="rounded-md px-3 py-2 text-sm font-semibold transition"
+                :class="activeTab === tab.id ? 'bg-green-400 text-slate-950' : 'text-slate-300 hover:bg-slate-900 hover:text-white'"
+                @click="activeTab = tab.id"
+            >
+                {{ tab.label }}
+            </button>
+        </div>
 
-        <div class="flex flex-wrap items-center justify-between -m-2">
-
-            <!-- Topic field. -->
-            <div class="relative m-2 mr-4">
-                <input
-                    type="text"
-                    placeholder="Market Prompt"
-                    class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                    :value="effectiveTopic"
-                    :disabled="forcedTopic"
-                    @input="market = $event.target.value"
-                >
-            
-            </div>
-            <div class="relative m-2 mr-4">
-                <input
-                    type="number"
-                    placeholder="Market Size"
-                    class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                    @input="threshold = $event.target.value"
-                >
-        
-            </div>
-            <div class="relative m-2 mr-4">
-                <input
-                    type="number"
-                    placeholder="SOL"
-                    class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                    @input="amount = $event.target.value"
-                >
-                
-            </div>
-
-            <div class="flex items-center space-x-6 m-2 ml-auto">
-
-                <!-- Character limit. -->
-                <div :class="characterLimitColour">
-                    {{ characterLimit }} left
+        <div v-if="isUploadMode" class="mb-5 rounded-lg border border-dashed border-slate-700 bg-slate-950 p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <div class="text-sm font-semibold text-white">{{ activeMode.label }} upload</div>
+                    <p class="mt-1 text-sm gp-muted">Accepted types: {{ activeMode.accept }}</p>
                 </div>
+                <button type="button" class="gp-button-secondary" :disabled="isUploading" @click="chooseFile">
+                    {{ isUploading ? 'Uploading...' : 'Choose file' }}
+                </button>
+            </div>
+            <input
+                ref="fileInput"
+                type="file"
+                :accept="activeMode.accept"
+                class="hidden"
+                @change="handleFileUpload"
+            >
+            <p v-if="uploadStatus" class="mt-3 text-sm text-green-200">{{ uploadStatus }}</p>
+            <p v-if="uploadError" class="mt-3 text-sm text-red-200">{{ uploadError }}</p>
+        </div>
 
-                <!-- PostContent button. -->
+        <div class="grid gap-4">
+            <label class="grid gap-2">
+                <span class="text-sm font-semibold text-slate-200">Content / Link</span>
+                <textarea
+                    ref="textarea"
+                    rows="2"
+                    class="gp-input resize-none text-base"
+                    style="min-height: 7rem;"
+                    placeholder="Paste content, a source link, or an Arweave media link..."
+                    v-model="content"
+                ></textarea>
+            </label>
+
+            <div class="grid gap-4 lg:grid-cols-3">
+                <label class="grid gap-2 lg:col-span-1">
+                    <span class="text-sm font-semibold text-slate-200">Market prompt</span>
+                    <input
+                        type="text"
+                        placeholder="example-topic"
+                        class="gp-input"
+                        :value="effectiveTopic"
+                        :disabled="forcedTopic"
+                        @input="market = $event.target.value"
+                    >
+                </label>
+                <label class="grid gap-2">
+                    <span class="text-sm font-semibold text-slate-200">Market size / validator threshold</span>
+                    <input
+                        type="number"
+                        min="3"
+                        step="2"
+                        placeholder="3"
+                        class="gp-input"
+                        v-model="threshold"
+                    >
+                </label>
+                <label class="grid gap-2">
+                    <span class="text-sm font-semibold text-slate-200">Stake amount in SOL</span>
+                    <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.1"
+                        class="gp-input"
+                        v-model="amount"
+                    >
+                </label>
+            </div>
+
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <div :class="characterLimitColour" class="text-sm">{{ characterLimit }} characters left</div>
+                    <p class="mt-1 text-xs gp-muted">{{ postHint }}</p>
+                </div>
                 <button
-                    class="text-white px-4 py-2 rounded-full font-semibold" :disabled="! canPostContent"
-                    :class="canPostContent ? 'bg-blue-800' : 'bg-blue-800 cursor-not-allowed'"
+                    class="gp-button-primary"
+                    :disabled="!canPostContent"
                     @click="send"
                 >
-                    Post
+                    Create market
                 </button>
             </div>
         </div>
     </div>
 
-    <div v-else-if="activeTab === 'form2'">
-      <!-- Upload input -->
-      <div class="relative m-2 mr-4">
-            <label for="imageUpload" class="block mb-2 text-blue-800">Upload Text</label>
-            <input
-                id="imageUpload"
-                type="file"
-                accept="application/*"
-                @change="handleFileUpload"
-                class="hidden"
-            >
-        </div>
-
-      <!-- Content field. -->
-    <textarea
-        ref="textarea"
-        rows="1"
-        class="text-xl rounded w-full focus:outline-none pl-5 py-5 resize-none mb-3 bg-gray-500"
-        placeholder="Say something smart or post a link..."
-        v-model="content"
-    ></textarea>
-
-    <div class="flex flex-wrap items-center justify-between -m-2">
-
-        <!-- Topic field. -->
-        <div class="relative m-2 mr-4">
-            <input
-                type="text"
-                placeholder="Market Prompt"
-                class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                :value="effectiveTopic"
-                :disabled="forcedTopic"
-                @input="market = $event.target.value"
-            >
-            
-        </div>
-        <div class="relative m-2 mr-4">
-                <input
-                    type="number"
-                    placeholder="Market Size"
-                    class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                    @input="threshold = $event.target.value"
-                >
-        
-            </div>
-        <div class="relative m-2 mr-4">
-            <input
-                type="number"
-                placeholder="SOL"
-                class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                @input="amount = $event.target.value"
-            >
-            
-        </div>
-
-        <div class="flex items-center space-x-6 m-2 ml-auto">
-
-            <!-- Character limit. -->
-            <div :class="characterLimitColour">
-                {{ characterLimit }} left
-            </div>
-
-            <!-- PostContent button. -->
-            <button
-                class="text-white px-4 py-2 rounded-full font-semibold" :disabled="! canPostContent"
-                :class="canPostContent ? 'bg-blue-800' : 'bg-blue-800 cursor-not-allowed'"
-                @click="send"
-            >
-                Post
-            </button>
-        </div>
-    </div>
-    </div>
-
-    <div v-else-if="activeTab === 'form3'">
-        <div class="relative m-2 mr-4">
-            <label for="imageUpload" class="block mb-2 text-blue-800">Upload Image</label>
-            <input
-                id="imageUpload"
-                type="file"
-                accept="image/*"
-                @change="handleFileUpload"
-                class="hidden"
-            >
-        </div>
-
-      <!-- Content field. -->
-    <textarea
-        ref="textarea"
-        rows="1"
-        class="text-xl rounded w-full focus:outline-none pl-5 py-5 resize-none mb-3 bg-gray-500"
-        placeholder="Say something smart or post a link..."
-        v-model="content"
-    ></textarea>
-
-    <div class="flex flex-wrap items-center justify-between -m-2">
-
-        <!-- Topic field. -->
-        <div class="relative m-2 mr-4">
-            <input
-                type="text"
-                placeholder="Market Prompt"
-                class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                :value="effectiveTopic"
-                :disabled="forcedTopic"
-                @input="market = $event.target.value"
-            >
-           
-        </div>
-        <div class="relative m-2 mr-4">
-            <input
-                type="number"
-                placeholder="Market Size"
-                class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                @input="threshold = $event.target.value"
-            >
-    
-        </div>
-        <div class="relative m-2 mr-4">
-            <input
-                type="number"
-                placeholder="SOL"
-                class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                @input="amount = $event.target.value"
-            >
-            
-        </div>
-        
-        <div class="flex items-center space-x-6 m-2 ml-auto">
-
-            <!-- Character limit. -->
-            <div :class="characterLimitColour">
-                {{ characterLimit }} left
-            </div>
-
-            <!-- PostContent button. -->
-            <button
-                class="text-white px-4 py-2 rounded-full font-semibold" :disabled="! canPostContent"
-                :class="canPostContent ? 'bg-blue-800' : 'bg-blue-800 cursor-not-allowed'"
-                @click="send"
-            >
-                Post
-            </button>
-        </div>
-    </div>
-     
-    </div>
-
-    <div v-else-if="activeTab === 'form4'">
-            <!-- Upload input -->
-        <div class="relative m-2 mr-4">
-            <label for="imageUpload" class="block mb-2 text-blue-800">Upload Audio</label>
-            <input
-                id="imageUpload"
-                type="file"
-                accept=".mp3, .wav, .ogg, .mp4, .webm"
-                @change="handleFileUpload"
-                class="hidden"
-            >
-        </div>
-
-      <!-- Content field. -->
-    <textarea
-        ref="textarea"
-        rows="1"
-        class="text-xl rounded w-full focus:outline-none pl-5 py-5 resize-none mb-3 bg-gray-500"
-        placeholder="Say something smart or post a link..."
-        v-model="content"
-    ></textarea>
-
-    <div class="flex flex-wrap items-center justify-between -m-2">
-
-        <!-- Topic field. -->
-        <div class="relative m-2 mr-4">
-            <input
-                type="text"
-                placeholder="Market Prompt"
-                class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                :value="effectiveTopic"
-                :disabled="forcedTopic"
-                @input="market = $event.target.value"
-            >
-           
-        </div>
-        <div class="relative m-2 mr-4">
-                <input
-                    type="number"
-                    placeholder="Market Size"
-                    class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                    @input="threshold = $event.target.value"
-                >
-        
-            </div>
-        <div class="relative m-2 mr-4">
-            <input
-                type="number"
-                placeholder="SOL"
-                class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                @input="amount = $event.target.value"
-            >
-            
-        </div>
-
-        <div class="flex items-center space-x-6 m-2 ml-auto">
-
-            <!-- Character limit. -->
-            <div :class="characterLimitColour">
-                {{ characterLimit }} left
-            </div>
-
-            <!-- PostContent button. -->
-            <button
-                class="text-white px-4 py-2 rounded-full font-semibold" :disabled="! canPostContent"
-                :class="canPostContent ? 'bg-blue-800' : 'bg-blue-800 cursor-not-allowed'"
-                @click="send"
-            >
-                Post
-            </button>
-        </div>
-    </div>
-    </div>
-
-    <div v-else>
-             <!-- Upload input -->
-             <div class="relative m-2 mr-4">
-            <label for="imageUpload" class="block mb-2 text-blue-800">Upload Video</label>
-            <input
-                id="imageUpload"
-                type="file"
-                accept=".mp3, .wav, .ogg, .mp4, .webm"
-                @change="handleFileUpload"
-                class="hidden"
-            >
-        </div>
-
-      <!-- Content field. -->
-    <textarea
-        ref="textarea"
-        rows="1"
-        class="text-xl rounded w-full focus:outline-none pl-5 py-5 resize-none mb-3 bg-gray-500"
-        placeholder="Say something smart or post a link..."
-        v-model="content"
-    ></textarea>
-
-    <div class="flex flex-wrap items-center justify-between -m-2">
-
-        <!-- Topic field. -->
-        <div class="relative m-2 mr-4">
-            <input
-                type="text"
-                placeholder="Market Prompt"
-                class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                :value="effectiveTopic"
-                :disabled="forcedTopic"
-                @input="market = $event.target.value"
-            >
-           
-        </div>
-        <div class="relative m-2 mr-4">
-                <input
-                    type="number"
-                    placeholder="Market Size"
-                    class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                    @input="threshold = $event.target.value"
-                >
-        
-            </div>
-        <div class="relative m-2 mr-4">
-            <input
-                type="number"
-                placeholder="SOL"
-                class="text-blue-800 rounded-full pl-5 pr-1 py-2 bg-gray-500"
-                @input="amount = $event.target.value"
-            >
-            
-        </div>
-
-        <div class="flex items-center space-x-6 m-2 ml-auto">
-
-            <!-- Character limit. -->
-            <div :class="characterLimitColour">
-                {{ characterLimit }} left
-            </div>
-
-            <!-- PostContent button. -->
-            <button
-                class="text-white px-4 py-2 rounded-full font-semibold" :disabled="! canPostContent"
-                :class="canPostContent ? 'bg-blue-800' : 'bg-blue-800 cursor-not-allowed'"
-                @click="send"
-            >
-                Post
-            </button>
-        </div>
-    </div>
-    </div>
-  </div>
-
-    </div>
-
-    <div v-else class="px-8 py-4 bg-gray-50 text-gray-500 text-center border-b">
-        Connect your wallet to start posting...
+    <div v-else class="gp-card text-center">
+        <h2 class="text-lg font-semibold text-white">Connect your wallet to create a validation market.</h2>
+        <p class="mx-auto mt-2 max-w-xl gp-muted">
+            Posting opens an on-chain content account and funds the initial market pool.
+        </p>
     </div>
 </template>
-
-<style>
-.tabs {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap; /* Allow tabs to wrap into new lines */
-}
-
-.tab {
-  padding: 8px 16px;
-  background-color: blue;
-  border: none;
-  border-radius: 20px;
-  color: white;
-  cursor: pointer;
-  margin: 8px; /* Adjust margin for spacing between tabs */
-}
-
-.tab.active {
-  background-color: darkblue;
-}
-</style>

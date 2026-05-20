@@ -10,37 +10,45 @@ const props = defineProps({
     postContent: Object,
 })
 
-const counter = ref()
-const poster = ref()
-const useravatar = ref()
-const username = ref()
-
 const { postContent } = toRefs(props)
 const { wallet } = useWorkspace()
+
+const useravatar = ref('')
+const username = ref('')
+const mayGoLong = ref(false)
+const mayGoShort = ref(false)
+
 const isMyPostContent = computed(() => wallet.value && wallet.value.publicKey.toBase58() === postContent.value.poster.toBase58())
 const authorRoute = computed(() => {
     if (isMyPostContent.value) {
         return { name: 'Account' }
-    } else {
-        return { name: 'Accounts', params: { author: postContent.value.poster.toBase58() } }
     }
+    return { name: 'Accounts', params: { author: postContent.value.poster.toBase58() } }
 })
+const marketOpen = computed(() => !postContent.value.validatorThresholdReached)
+const statusLabel = computed(() => marketOpen.value ? 'Open' : 'Closed')
+const outcomeLabel = computed(() => {
+    if (marketOpen.value) return 'Pricing'
+    return postContent.value.shortWin ? 'Short won' : 'Long won'
+})
+const formattedContent = computed(() => formatContent(postContent.value.content))
 
-counter.value = postContent.value.postCounter
-poster.value = postContent.value.poster
+const stats = computed(() => [
+    { label: 'Poster stake', value: formatSol(postContent.value.amount) },
+    { label: 'Market size', value: `${postContent.value.threshold} validators` },
+    { label: 'Total pool', value: formatSol(postContent.value.totalPool) },
+    { label: 'Validators', value: `${postContent.value.validatorCount}/${postContent.value.threshold}` },
+    { label: 'Long pool', value: formatSol(postContent.value.longPool) },
+    { label: 'Short pool', value: formatSol(postContent.value.shortPool) },
+])
 
 const collectPoster = async () => {
-    console.log("collection running..." + counter.value)
-    await posterCollect(counter.value)
+    await posterCollect(postContent.value.postCounter)
 }
 
 const collectValidator = async () => {
-    console.log("collection running..." + counter.value)
-    await validatorCollect(poster.value, counter.value)
+    await validatorCollect(postContent.value.poster, postContent.value.postCounter)
 }
-
-const mayGoLong = ref(false)
-const mayGoShort = ref(false)
 
 onMounted(async () => {
     try {
@@ -53,136 +61,165 @@ onMounted(async () => {
     }
 })
 
+function formatSol(value) {
+    const numeric = Number(value || 0)
+    return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 4 })} SOL`
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, character => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;',
+    }[character]))
+}
+
+function isYouTubeLink(url) {
+    return /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/.test(url)
+}
+
+function extractYouTubeVideoId(url) {
+    const match = url.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
+    return match ? match[1] : null
+}
+
+function renderUrl(url) {
+    try {
+        const parsed = new URL(url)
+        if (!['http:', 'https:'].includes(parsed.protocol)) return escapeHtml(url)
+        const safeHref = escapeHtml(parsed.href)
+        if (isYouTubeLink(url)) {
+            const videoId = extractYouTubeVideoId(url)
+            if (videoId) {
+                return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer"><img src="https://img.youtube.com/vi/${videoId}/hqdefault.jpg" alt="YouTube preview"></a>`
+            }
+        }
+        return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`
+    } catch {
+        return escapeHtml(url)
+    }
+}
+
 function formatContent(content) {
-      // Regular expression to identify URLs in the content
-      const urlRegex = /((https?|ftp):\/\/[^\s/$.?#].[^\s]*)/g;
-
-        // Replace URLs with clickable anchor tags
-  const formattedContent = content.replace(urlRegex, (url) => {
-    // Check if the URL is a YouTube link
-    if (isYouTubeLink(url)) {
-      // Extract the video ID from the YouTube link
-      const videoId = extractYouTubeVideoId(url);
-
-      // Create a web preview with the YouTube thumbnail
-      const youtubeThumbnail = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer">
-                <img src="${youtubeThumbnail}" alt="YouTube Thumbnail">
-              </a>`;
-    } else {
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
-    }
-  });
-
-      return formattedContent;
-    }
-
-    const isYouTubeLink = (url) => {
-  // Regular expression to identify YouTube links
-  const youtubeRegex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-  return youtubeRegex.test(url);
-};
-
-const extractYouTubeVideoId = (url) => {
-  // Regular expression to extract the video ID from a YouTube link
-  const youtubeRegex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-  const match = url.match(youtubeRegex);
-  return match ? match[1] : null;
-};
+    const raw = String(content ?? '')
+    const urlRegex = /https?:\/\/[^\s<>"']+/g
+    let result = ''
+    let cursor = 0
+    raw.replace(urlRegex, (url, offset) => {
+        result += escapeHtml(raw.slice(cursor, offset))
+        result += renderUrl(url)
+        cursor = offset + url.length
+        return url
+    })
+    result += escapeHtml(raw.slice(cursor))
+    return result.replace(/\n/g, '<br>')
+}
 </script>
 
 <template>
     <go-long-form v-if="mayGoLong" :postContent="postContent" @close="mayGoLong = false"></go-long-form>
-    <go-short-form v-if="mayGoShort" :postContent="postContent" @close="mayGoShort = false"></go-short-form>
+    <go-short-form v-else-if="mayGoShort" :postContent="postContent" @close="mayGoShort = false"></go-short-form>
 
-    <div class="px-8 py-4" v-else-if="!mayGoLong">
-        <div class="flex justify-between">
-            <div class="py-1">
-                <router-link :to="authorRoute" class="hover:underline">
-
-                <div class="flex items-center">
-                    <img style="border-radius: 50%; max-height: 50px; max-width: 50px; margin-right: 16px; object-fit: cover; aspect-ratio: 1/1;" :src="useravatar" alt="User Avatar">
-                    <h1 class="inline text-gray-500 font-semibold text-lg" :title="username">
-                    
-                            {{ username }}
-                      
-                    </h1>
-                </div>
-                    <h3 class="text-gray-500 inline font-semibold" :title="postContent.author">
-                            {{ postContent.author_display }}
-                        
-                    </h3>
+    <article v-else class="gp-card">
+        <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+                <router-link :to="authorRoute" class="flex items-center gap-3">
+                    <img
+                        v-if="useravatar"
+                        class="h-12 w-12 rounded-lg border border-slate-700 object-cover"
+                        :src="useravatar"
+                        alt="Creator avatar"
+                    >
+                    <span v-else class="flex h-12 w-12 items-center justify-center rounded-lg border border-slate-700 bg-slate-950 text-sm font-semibold text-green-300">
+                        GP
+                    </span>
+                    <span class="min-w-0">
+                        <span class="block truncate font-semibold text-white">{{ username || 'GoPulse creator' }}</span>
+                        <span class="block break-all text-xs gp-muted">{{ postContent.author_display }}</span>
+                    </span>
                 </router-link>
-                <span class="text-gray-500"> • </span>
-                <time class="text-gray-500 text-sm" :title="postContent.created_at">
-                    <router-link :to="{ name: 'PostContent', params: { postContent: postContent.publicKey.toBase58() } }" class="hover:underline">
+                <div class="mt-3 flex flex-wrap items-center gap-2 text-xs gp-muted">
+                    <router-link :to="{ name: 'PostContent', params: { postContent: postContent.publicKey.toBase58() } }" class="hover:text-white">
                         {{ postContent.created_ago }}
                     </router-link>
-                </time>
+                    <span>•</span>
+                    <span>{{ postContent.created_at }}</span>
+                    <span v-if="isMyPostContent" class="gp-pill">You posted this</span>
+                </div>
             </div>
-        </div>
-      
 
-        <div class="flex flex-wrap items-center justify-between -m-2">
-                <!-- Display postContent.market -->
-    <router-link v-if="postContent.market" :to="{ name: 'Markets', params: { market: postContent.market } }" class="inline-block mt-2 text-blue-500 hover:underline break-all">
-      #{{ postContent.market }}
-    </router-link>
+            <div class="flex flex-wrap gap-2">
+                <span class="gp-pill" :class="marketOpen ? 'text-green-200' : 'text-blue-100'">{{ statusLabel }}</span>
+                <span class="gp-pill">{{ outcomeLabel }}</span>
+            </div>
+        </div>
 
-    <!-- Display postContent.content -->
-    <div style="-ms-word-break: break-all; word-break: break-all; word-break: break-word;
-      -webkit-hyphens: auto; -moz-hyphens: auto; -ms-hyphens: auto; hyphens: auto;"
-      class="m-2 mr-4">
-      <p class="text-blue-800 rounded pl-4 pr-4 py-2 bg-gray-500" v-html="formatContent(postContent.content)">
-      </p>
-    </div>
-            
-            <div class="text-gray-500 m-2 mr-4" style="transform: scale(0.75);">
-                Poster Stake
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.amount"></p>
-            </div>
-            
-            <div class="text-gray-500 m-2 mr-4" style="transform: scale(0.75);">
-                Market Size
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.threshold"></p>
-            </div>
-            <!-- <div class="m-2 mr-4">
-                Long Pool
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.longPool"></p>
-            </div>
-            <div class="m-2 mr-4">
-                Short Pool
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.shortPool"></p>
-            </div> -->
-            <div class="text-gray-500 m-2 mr-4" style="transform: scale(0.75);">
-                Total Pool
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.totalPool"></p>
-            </div>
-            <!-- <div class="m-2 mr-4">
-                Validator Count
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="postContent.validatorCount"></p>
-            </div> -->
-            <div class="text-gray-500 m-2 mr-4" style="transform: scale(0.75);">
-                Market Open
-                <p class="text-blue-800 rounded-full pl-10 pr-4 py-2 bg-gray-500" v-text="!postContent.validatorThresholdReached"></p>
-            </div>
+        <div class="mt-5">
+            <router-link
+                v-if="postContent.market"
+                :to="{ name: 'Markets', params: { market: postContent.market } }"
+                class="gp-pill normal-case tracking-normal hover:border-green-300 hover:text-white"
+            >
+                #{{ postContent.market }}
+            </router-link>
+            <div class="gp-link-content mt-4 break-words rounded-lg border border-slate-800 bg-slate-950 p-4 text-base leading-7 text-slate-100" v-html="formattedContent"></div>
         </div>
-        <div style="display: flex; justify-content: center;" class="flex" v-if="!isMyPostContent && !postContent.validatorThresholdReached">
-            <button @click="mayGoLong = true" class="flex px-2 rounded-full hover:bg-blue-800" title="Go Long">
-                <img src="https://static.thenounproject.com/png/58345-200.png" style="max-width: 50px; transform: scaleX(-1); filter: invert(50%);" alt=""/>
-            </button>
-            <button @click="mayGoShort = true" class="flex px-2 rounded-full hover:bg-blue-800" title="Go Short">
-                <img src="https://cdn-icons-png.flaticon.com/512/26/26103.png" style="max-width: 50px; filter: invert(50%);" alt=""/>
-            </button>
 
+        <div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div v-for="item in stats" :key="item.label" class="gp-stat">
+                <div class="text-xs font-semibold uppercase tracking-wide gp-muted">{{ item.label }}</div>
+                <div class="mt-1 break-words text-sm font-semibold text-white">{{ item.value }}</div>
+            </div>
         </div>
-        <div style="display: flex; justify-content: center;" class="flex">
-            <button v-if="postContent.validatorThresholdReached && isMyPostContent" @click="collectPoster" class="text-center flex px-2 rounded-full hover:bg-blue-800" title="Poster Collect">
-                <img src="https://static.thenounproject.com/png/3249399-200.png" style="max-width: 50px; filter: invert(50%);" alt="">
-            </button>
-            <button v-if="postContent.validatorThresholdReached && !isMyPostContent" @click="collectValidator" class="flex px-2 rounded-full hover:bg-blue-800" title="Validator Collect">
-                <img src="https://static.thenounproject.com/png/3249399-200.png" style="max-width: 50px; filter: invert(50%);" alt="">
-            </button> 
+
+        <div class="mt-5 flex flex-col gap-3 border-t border-slate-800 pt-5 md:flex-row md:items-center md:justify-between">
+            <p class="text-sm gp-muted">
+                Long supports the content outcome. Short challenges it. Markets close when the validator threshold is reached.
+            </p>
+            <div class="flex flex-wrap gap-2">
+                <button
+                    v-if="!isMyPostContent && marketOpen"
+                    @click="mayGoLong = true"
+                    class="gp-button-primary"
+                    title="Go Long"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 14l6-6 4 4 6-8" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6" />
+                    </svg>
+                    Long
+                </button>
+                <button
+                    v-if="!isMyPostContent && marketOpen"
+                    @click="mayGoShort = true"
+                    class="gp-button-secondary"
+                    title="Go Short"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 10l6 6 4-4 6 8" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M14 20h6v-6" />
+                    </svg>
+                    Short
+                </button>
+                <button
+                    v-if="postContent.validatorThresholdReached && isMyPostContent"
+                    @click="collectPoster"
+                    class="gp-button-primary"
+                    title="Poster Collect"
+                >
+                    Collect creator rewards
+                </button>
+                <button
+                    v-if="postContent.validatorThresholdReached && !isMyPostContent"
+                    @click="collectValidator"
+                    class="gp-button-primary"
+                    title="Validator Collect"
+                >
+                    Collect validator rewards
+                </button>
+            </div>
         </div>
-    </div>    
+    </article>
 </template>

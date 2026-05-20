@@ -9,118 +9,97 @@ import { useWorkspace } from '@/composables'
 const posts = ref([])
 const { wallet } = useWorkspace()
 const filters = ref([])
-let update = ref(false)
-let username = ref()
-let useravatar = ref()
-
-fetchUser(wallet.value.publicKey).then(res => {
-    username.value = res.name
-    useravatar.value = res.avatar
-})
+const update = ref(false)
+const username = ref('')
+const useravatar = ref('')
+const loadingProfile = ref(false)
+const profileError = ref('')
 
 const onNewPage = newposts => posts.value.push(...newposts)
 const { prefetch, hasNextPage, getNextPage, loading } = paginateposts(filters, 10, onNewPage)
 
 watchEffect(() => {
-    if (! wallet.value) return 
+    if (!wallet.value) return
+
+    const publicKey = wallet.value.publicKey
     posts.value = []
-    filters.value = [authorFilter(wallet.value.publicKey.toBase58())]
+    filters.value = [authorFilter(publicKey.toBase58())]
     prefetch().then(getNextPage)
+
+    loadingProfile.value = true
+    profileError.value = ''
+    fetchUser(publicKey).then(res => {
+        username.value = res.name
+        useravatar.value = res.avatar
+    }).catch(() => {
+        username.value = ''
+        useravatar.value = ''
+        profileError.value = 'No profile found yet. Create one from Settings.'
+    }).finally(() => {
+        loadingProfile.value = false
+    })
 })
 
-const addPostContent = postContent => posts.value.push(postContent)
+const addPostContent = postContent => {
+    if (postContent) {
+        posts.value.push(postContent)
+        return
+    }
+    posts.value = []
+    prefetch().then(getNextPage)
+}
 
 function toggleSettings() {
     update.value = !update.value
 }
-
 </script>
 
 <template>
-    <div v-if="wallet" class="border-b px-8 py-4 bg-gray-500 break-all" style="display: flex; align-items: center;">
-        
+    <section class="gp-content-stack">
+        <div v-if="wallet" class="gp-card">
+            <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+                <div class="flex min-w-0 items-center gap-4">
+                    <img
+                        v-if="useravatar"
+                        class="h-20 w-20 rounded-lg border border-slate-700 object-cover"
+                        :src="useravatar"
+                        alt="Profile avatar"
+                    >
+                    <div v-else class="flex h-20 w-20 items-center justify-center rounded-lg border border-slate-700 bg-slate-950 text-lg font-semibold text-green-300">
+                        GP
+                    </div>
+                    <div class="min-w-0">
+                        <div class="gp-pill mb-2">Creator profile</div>
+                        <h2 class="truncate text-2xl font-semibold text-white">
+                            {{ loadingProfile ? 'Loading profile...' : (username || 'Unnamed GoPulse account') }}
+                        </h2>
+                        <p class="mt-1 break-all text-sm gp-muted">{{ wallet.publicKey.toBase58() }}</p>
+                        <p v-if="profileError" class="mt-2 text-sm text-yellow-200">{{ profileError }}</p>
+                    </div>
+                </div>
+                <button class="gp-button-secondary" @click="toggleSettings">
+                    {{ update ? 'Close settings' : 'Settings' }}
+                </button>
+            </div>
+        </div>
 
-        <img style="border-radius: 50%; max-height: 100px; max-width: 100px; margin-right: 16px; object-fit: cover; aspect-ratio: 1/1;" :src="useravatar" alt="User Avatar">        
+        <div v-else class="gp-card text-center">
+            <h2 class="text-xl font-semibold text-white">Connect your wallet to view your profile.</h2>
+            <p class="mx-auto mt-2 max-w-xl gp-muted">
+                Your account page contains profile settings and the markets you have created.
+            </p>
+        </div>
 
-    <div>
-        <h1 style="font-size: 24px; margin-bottom: 8px;">{{ username }}</h1>
-        <h5 style="font-size: 14px;">{{ wallet.publicKey.toBase58() }}</h5>
-    </div>
-</div>
-
-        <div class="border-b px-8 py-4 bg-gray-500 break-all flex items-center space-x-6 m-2 ml-auto">
-    <button
-        class="text-white bg-blue-800 px-4 py-2 rounded-full font-semibold"
-        @click="toggleSettings"
-    >
-        Settings
-    </button>
-    </div>
-    
-    <pageUser-form v-if="update"></pageUser-form>
-    <postContent-form @added="addPostContent"></postContent-form>
-    <postContent-list v-model:posts="posts" :loading="loading" :has-more="hasNextPage" @more="getNextPage"></postContent-list>
+        <page-user-form v-if="wallet && update"></page-user-form>
+        <post-content-form v-if="wallet" @added="addPostContent"></post-content-form>
+        <post-content-list
+            v-if="wallet"
+            v-model:posts="posts"
+            :loading="loading"
+            :has-more="hasNextPage"
+            empty-title="You have not created any markets yet"
+            empty-text="Create a validation market above and it will appear in your profile feed."
+            @more="getNextPage"
+        ></post-content-list>
+    </section>
 </template>
-
-<!-- <script setup>
-import { ref, watchEffect } from 'vue'
-import { paginateposts, authorFilter, fetchUser } from '@/api'
-import PostContentForm from '@/components/PostContentForm'
-import PostContentList from '@/components/PostContentList'
-import PageUserForm from '@/components/PageUserForm'
-import { useWorkspace } from '@/composables'
-import { useAnchorWallet } from 'solana-wallets-vue'
-
-const posts = ref([])
-// const { wallet } = useWorkspace()
-const wallet = useAnchorWallet()
-const filters = ref([])
-let update = ref(false)
-let username = ref()
-let useravatar = ref()
-
-const onNewPage = newposts => posts.value.push(...newposts)
-const { prefetch, hasNextPage, getNextPage, loading } = paginateposts(filters, 10, onNewPage)
-
-console.log("wallet profile: " + wallet.value.publicKey)
-
-watchEffect(() => {
-    if (! wallet.value) return
-    posts.value = []
-    filters.value = [authorFilter(wallet.value.publicKey.toBase58())]
-    prefetch().then(getNextPage)
-})
-
-fetchUser(wallet.value.publicKey).then(res => {
-    username.value = res.name
-    useravatar.value = res.avatar
-})
-
-const addPostContent = postContent => posts.value.push(postContent)
-
-function toggleSettings() {
-    update.value = !update.value
-}
-
-</script>
-
-<template>
-    <div v-if="wallet" class="border-b px-8 py-4 bg-gray-500 break-all">
-        <span>
-            <img style="border-radius: 50%; max-height: 100px; max-width: 100px" v-bind:src=this.useravatar>
-            <h1 style="font-size: 24px;">{{ this.username }}</h1>
-        </span>
-        <h5 style="font-size: 14px;">{{ wallet.publicKey.toBase58() }}</h5>
-        <div class="flex items-center space-x-6 m-2 ml-auto">
-    <button
-        class="text-white bg-blue-800 px-4 py-2 rounded-full font-semibold"
-        @click="toggleSettings"
-    >
-        Settings
-    </button>
-    </div>
-    </div>
-    <pageUser-form v-if="update"></pageUser-form>
-    <postContent-form @added="addPostContent"></postContent-form>
-    <postContent-list v-model:posts="posts" :loading="loading" :has-more="hasNextPage" @more="getNextPage"></postContent-list>
-</template> -->
