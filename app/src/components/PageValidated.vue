@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watchEffect } from 'vue'
+import { onMounted, ref } from 'vue'
 import { paginateposts } from '@/api'
 import PostContentList from '@/components/ValidatedPostContentList'
 import { useWorkspace } from '@/composables'
@@ -7,15 +7,24 @@ import { useWorkspace } from '@/composables'
 const posts = ref([])
 const { wallet } = useWorkspace()
 const filters = ref([])
+const validatedError = ref('')
 
 const onNewPage = newposts => posts.value.push(...newposts)
 const { prefetch, hasNextPage, getNextPage, loading } = paginateposts(filters, 20, onNewPage)
 
-watchEffect(() => {
-    if (! wallet.value) return
+const loadValidated = async () => {
     posts.value = []
-    prefetch().then(getNextPage)
-})
+    validatedError.value = ''
+    try {
+        await prefetch()
+        await getNextPage()
+    } catch (error) {
+        console.error(error)
+        validatedError.value = 'Unable to load validated markets from the current network.'
+    }
+}
+
+onMounted(loadValidated)
 </script>
 
 <template>
@@ -29,10 +38,16 @@ watchEffect(() => {
         </div>
 
         <div v-if="!wallet" class="gp-card text-center">
-            <h2 class="text-xl font-semibold text-white">Connect your wallet to view validated markets.</h2>
+            <h2 class="text-xl font-semibold text-white">Connect your wallet to collect from validated markets.</h2>
             <p class="mx-auto mt-2 max-w-xl gp-muted">
-                Wallet connection is required to load the Anchor workspace and collection actions.
+                Closed markets are visible without a wallet. Collection actions require a connected wallet.
             </p>
+        </div>
+
+        <div v-if="validatedError" class="gp-card text-center">
+            <h3 class="text-lg font-semibold text-white">Validated markets could not be loaded</h3>
+            <p class="mx-auto mt-2 max-w-xl gp-muted">{{ validatedError }}</p>
+            <button class="gp-button-secondary mt-5" @click="loadValidated">Retry</button>
         </div>
 
         <post-content-list

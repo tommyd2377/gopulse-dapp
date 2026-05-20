@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watchEffect } from 'vue'
+import { onMounted, ref } from 'vue'
 import { WalletMultiButton } from 'solana-wallets-vue'
 import { paginateposts } from '@/api'
 import PostContentList from '@/components/PostContentList'
@@ -8,15 +8,24 @@ import { useWorkspace } from '@/composables'
 const posts = ref([])
 const { wallet } = useWorkspace()
 const filters = ref([])
+const feedError = ref('')
 
 const onNewPage = newposts => posts.value.push(...newposts)
 const { prefetch, hasNextPage, getNextPage, loading } = paginateposts(filters, 20, onNewPage)
 
-watchEffect(() => {
-    if (! wallet.value) return
+const loadFeed = async () => {
     posts.value = []
-    prefetch().then(getNextPage)
-})
+    feedError.value = ''
+    try {
+        await prefetch()
+        await getNextPage()
+    } catch (error) {
+        console.error(error)
+        feedError.value = 'Unable to load validation markets from the current network.'
+    }
+}
+
+onMounted(loadFeed)
 </script>
 
 <template>
@@ -53,13 +62,19 @@ watchEffect(() => {
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M3 12h18" />
                 </svg>
             </div>
-            <h2 class="text-xl font-semibold text-white">Connect your wallet to view and participate in GoPulse markets.</h2>
+            <h2 class="text-xl font-semibold text-white">Connect your wallet to participate in GoPulse markets.</h2>
             <p class="mx-auto mt-2 max-w-xl gp-muted">
-                Wallet connection loads the protocol workspace, feed pagination, and market actions for posting, validation, and collection.
+                Public validation markets are visible without a wallet. Connect when you are ready to post, validate, or collect rewards.
             </p>
             <div class="mx-auto mt-5 max-w-xs">
                 <wallet-multi-button></wallet-multi-button>
             </div>
+        </div>
+
+        <div v-if="feedError" class="gp-card text-center">
+            <h3 class="text-lg font-semibold text-white">Markets could not be loaded</h3>
+            <p class="mx-auto mt-2 max-w-xl gp-muted">{{ feedError }}</p>
+            <button class="gp-button-secondary mt-5" @click="loadFeed">Retry</button>
         </div>
 
         <post-content-list
